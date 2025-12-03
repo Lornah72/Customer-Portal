@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Customer Ordering Portal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #f4f4f4; }
+    header { background: #222; color: #fff; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; }
+    header h1 { font-size: 18px; margin: 0; }
+    main { padding: 16px; max-width: 960px; margin: 0 auto; }
+    .card { background: #fff; padding: 12px 16px; margin-bottom: 12px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .item-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; align-items: center; }
+    .item-name { flex: 1 1 220px; }
+    .item-meta { font-size: 12px; color: #666; }
+    .item-qty { width: 70px; }
+    button { padding: 5px 10px; border-radius: 4px; border: 1px solid #ccc; background: #eee; cursor: pointer; }
+    button.primary { background: #0078d4; border-color: #0078d4; color: #fff; }
+    button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    input { padding: 4px 6px; border-radius: 4px; border: 1px solid #ccc; }
+    #message { font-size: 13px; }
+    #message.error { color: #b00020; }
+    #message.success { color: #006400; }
+    ul { padding-left: 18px; }
+    li { margin-bottom: 4px; }
+    .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+    .tab-btn { padding: 6px 10px; border-radius: 4px; border: 1px solid #ccc; background: #ddd; cursor: pointer; font-size: 13px; }
+    .tab-btn.active { background: #0078d4; color: #fff; border-color: #0078d4; }
+
+    /* ---------------- PREVIEW POPUP ---------------- */
+    #previewModal {
+      position: fixed;
+      left: 0; top: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.7);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+      z-index: 9999;
+    }
+    #previewBox {
+      background: white;
+      width: 90%; max-width: 700px;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 3px 12px rgba(0,0,0,0.4);
+      max-height: 90%;
+      overflow-y: auto;
+    }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { padding: 8px; border-bottom: 1px solid #ddd; text-align: left; }
+    .qty-input { width: 60px; }
+    .total-style { font-weight: bold; font-size: 16px; margin-top: 10px; }
+  </style>
+</head>
+
+<body>
+
+<!--------------------------- HEADER -------------------------->
+<header>
+  <h1>Customer Ordering Portal</h1>
+  <div style="display:flex; align-items:center; gap:10px;">
+    <div id="userStatus">Not logged in</div>
+    <button id="logoutBtn" style="display:none; padding:5px 10px;">Logout</button>
+  </div>
+</header>
+
+<main>
+
+<!--------------------------- LOGIN CARD -------------------------->
+<div class="card" id="loginCard">
+  <h2>Login</h2>
+  <ul>
+  <label>Email: <input id="emailInput" type="email"></label><br><br>
+  <label>Password: <input id="passwordInput" type="password"></label><br><br>
+
+  <button class="primary" id="loginBtn">Login</button>
+  <div id="loginMessage"></div>
+</div>
+
+<!--------------------------- PORTAL CARD -------------------------->
+<div class="card" id="portalCard" style="display:none;">
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="orderTab">New Order</button>
+    <button class="tab-btn" data-tab="historyTab">Order History</button>
+  </div>
+
+  <!--------------------------- NEW ORDER TAB -------------------------->
+  <div id="orderTab" class="tab">
+    <h2>New Order</h2>
+
+    <!-- BUTTON AT TOP -->
+    <button class="primary" id="previewOrderBtn">Review Order</button>
+    <span id="message"></span>
+
+    <div style="margin-top:12px;">
+      <label>Search: <input id="searchInput" placeholder="Search item..."></label>
+    </div>
+
+    <div id="items">Loading items...</div>
+
+    <h3>Your Cart</h3>
+    <div id="cart">No items in cart.</div>
+  </div>
+
+  <!--------------------------- HISTORY TAB -------------------------->
+  <div id="historyTab" class="tab" style="display:none;">
+    <h2>Order History</h2>
+    <div id="orders">Loading...</div>
+  </div>
+
+</div>
+</main>
+
+
+<!--------------------------- ORDER PREVIEW POPUP -------------------------->
+<div id="previewModal">
+  <div id="previewBox">
+    <h2>Review Your Order</h2>
+    <p>Edit quantities or remove items before sending.</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>Qty</th>
+          <th>Price</th>
+          <th>Total</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="previewTableBody"></tbody>
+    </table>
+
+    <div class="total-style" id="previewTotal"></div>
+
+    <br>
+    <button class="primary" id="confirmOrderBtn">Submit Order</button>
+    <button id="cancelPreviewBtn">Cancel</button>
+  </div>
+</div>
+
+
+<script>
+/* ----------------------------------------------------------
+   BASIC VARIABLES
+------------------------------------------------------------*/
+const BACKEND_URL = "http://localhost:4000";
+
+let token = null;
+let allItems = [];
+let cart = [];
+
+/* ----------------------------------------------------------
+   ELEMENTS
+------------------------------------------------------------*/
+const loginCard = document.getElementById("loginCard");
+const portalCard = document.getElementById("portalCard");
+const loginMessage = document.getElementById("loginMessage");
+const itemsDiv = document.getElementById("items");
+const cartDiv = document.getElementById("cart");
+const previewModal = document.getElementById("previewModal");
+const previewTableBody = document.getElementById("previewTableBody");
+const previewTotal = document.getElementById("previewTotal");
+const message = document.getElementById("message");
+
+/* ----------------------------------------------------------
+   LOGIN FUNCTION
+------------------------------------------------------------*/
+document.getElementById("loginBtn").addEventListener("click", async () => {
+  const email = document.getElementById("emailInput").value;
+  const password = document.getElementById("passwordInput").value;
+
+  const res = await fetch(`${BACKEND_URL}/login`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ email, password })
+  });
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    loginMessage.textContent = data.error || "Login failed";
+    return;
+  }
+
+  token = data.token;
+  localStorage.setItem("portalToken", token);
+
+  loginCard.style.display = "none";
+  portalCard.style.display = "block";
+
+  loadItems();
+});
+
+/* ----------------------------------------------------------
+   LOAD ITEMS
+------------------------------------------------------------*/
+async function loadItems() {
+  const res = await fetch(`${BACKEND_URL}/items`);
+  const data = await res.json();
+  allItems = data;
+  renderItems();
+}
+
+/* ----------------------------------------------------------
+   RENDER ITEMS LIST
+------------------------------------------------------------*/
+function renderItems() {
+  itemsDiv.innerHTML = "";
+
+  allItems.forEach(item => {
+    const row = document.createElement("div");
+    row.className = "item-row";
+
+    row.innerHTML = `
+      <div class="item-name">
+        <strong>${item.no}</strong> - ${item.name}<br>
+        <span class="item-meta">Price: ${item.price} | Stock: ${item.inventory}</span>
+      </div>
+      <input type="number" min="1" value="1" class="item-qty" id="qty-${item.id}">
+      <button>Add</button>
+    `;
+
+    row.querySelector("button").onclick = () => {
+      const qty = parseInt(document.getElementById(`qty-${item.id}`).value);
+
+      if (qty <= 0) return alert("Invalid quantity");
+
+      const existing = cart.find(c => c.id === item.id);
+      if (existing) existing.quantity += qty;
+      else cart.push({ ...item, quantity: qty });
+
+      renderCart();
+    };
+
+    itemsDiv.appendChild(row);
+  });
+}
+
+/* ----------------------------------------------------------
+   CART RENDERING
+------------------------------------------------------------*/
+function renderCart() {
+  if (cart.length === 0) {
+    cartDiv.textContent = "No items in cart.";
+    return;
+  }
+
+  cartDiv.innerHTML = "";
+  cart.forEach((item, i) => {
+    const div = document.createElement("div");
+    div.textContent = `${item.no} - ${item.name} (Qty: ${item.quantity})`;
+
+    const remove = document.createElement("button");
+    remove.textContent = "Remove";
+    remove.onclick = () => { cart.splice(i, 1); renderCart(); };
+
+    div.appendChild(remove);
+    cartDiv.appendChild(div);
+  });
+}
+
+/* ----------------------------------------------------------
+   PREVIEW ORDER POPUP
+------------------------------------------------------------*/
+document.getElementById("previewOrderBtn").addEventListener("click", () => {
+  if (cart.length === 0) {
+    alert("Cart is empty");
+    return;
+  }
+
+  openPreview();
+});
+
+function openPreview() {
+  previewTableBody.innerHTML = "";
+  let total = 0;
+
+  cart.forEach((item, index) => {
+    const row = document.createElement("tr");
+
+    const lineTotal = item.quantity * item.price;
+    total += lineTotal;
+
+    row.innerHTML = `
+      <td>${item.no}<br>${item.name}</td>
+      <td><input type="number" class="qty-input" value="${item.quantity}" id="pv-qty-${index}"></td>
+      <td>${item.price}</td>
+      <td id="pv-total-${index}">${lineTotal.toFixed(2)}</td>
+      <td><button id="rm-${index}">X</button></td>
+    `;
+
+    previewTableBody.appendChild(row);
+
+    // Change qty
+    row.querySelector(`#pv-qty-${index}`).oninput = (e) => {
+      let q = parseInt(e.target.value);
+      if (q <= 0) q = 1;
+      cart[index].quantity = q;
+
+      row.querySelector(`#pv-total-${index}`).textContent = (q * item.price).toFixed(2);
+      openPreview(); // refresh totals
+    };
+
+    // Remove item
+    row.querySelector(`#rm-${index}`).onclick = () => {
+      cart.splice(index, 1);
+      openPreview();
+    };
+  });
+
+  previewTotal.textContent = "Total: " + total.toFixed(2);
+  previewModal.style.display = "flex";
+}
+
+document.getElementById("cancelPreviewBtn").onclick = () => {
+  previewModal.style.display = "none";
+};
+
+/* ----------------------------------------------------------
+   SUBMIT ORDER FROM PREVIEW
+------------------------------------------------------------*/
+document.getElementById("confirmOrderBtn").addEventListener("click", async () => {
+  const res = await fetch(`${BACKEND_URL}/order`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + token
+    },
+    body: JSON.stringify({ lines: cart })
+  });
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    message.textContent = data.error || "Order failed";
+    message.className = "error";
+    previewModal.style.display = "none";
+    return;
+  }
+
+  message.textContent = data.message;
+  message.className = "success";
+
+  cart = [];
+  renderCart();
+  previewModal.style.display = "none";
+});
+
+</script>
+
+</body>
+</html>
