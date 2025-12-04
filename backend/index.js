@@ -1,4 +1,4 @@
-// index.js
+// backend/index.js
 // Customer ordering backend using OAuth (BC cloud) + simple JWT login
 
 import express from "express";
@@ -11,10 +11,6 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`Customer portal backend running on http://localhost:${PORT}`);
-});
-
 
 app.use(cors());
 app.use(express.json());
@@ -45,19 +41,19 @@ if (
 const BC_BASE_URL = `https://api.businesscentral.dynamics.com/v2.0/${BC_TENANT_ID}/${BC_ENV}/api/v2.0`;
 const COMPANY_URL = `${BC_BASE_URL}/companies(${BC_COMPANY_ID})`;
 
-// Demo portal users (map to real BC customers in TEST)
+// Demo portal users (map to real BC customers)
 const PORTAL_USERS = [
   {
     id: 1,
     email: "Robertos-Rest",
     password: "Rest1234",
-    bcCustomerNo: "CUST-00466", // 👈 real customer number in TEST
+    bcCustomerNo: "CUST-00466",
   },
   {
     id: 2,
     email: "Robertos-Roslyn",
     password: "Ros1234",
-    bcCustomerNo: "CUST-00232", // or another valid customer
+    bcCustomerNo: "CUST-00232",
   },
 ];
 
@@ -186,11 +182,18 @@ app.get("/items", async (req, res) => {
     const data = await response.json();
 
     const items = data.value.map((item) => ({
-      id: item.id,          // GUID – used as itemId when adding lines
+      id: item.id,                 // GUID – used as itemId when adding lines
       no: item.number,
       name: item.displayName,
       price: item.unitPrice,
       inventory: item.inventory,
+      // 👉 GTIN / Barcode from BC (adjust if your field name is different)
+      gtin:
+        item.gtin ||
+        item.GTIN ||
+        item.gtinCode ||
+        item.GTINCode ||
+        null,
     }));
 
     res.json(items);
@@ -246,7 +249,7 @@ app.post("/order", authMiddleware, async (req, res) => {
 
     const customerId = custData.value[0].id; // GUID
 
-    // 2. Create order header using customerId (not customerNumber)
+    // 2. Create order header using customerId
     const orderBody = {
       customerId: customerId,
       orderDate: new Date().toISOString().slice(0, 10),
@@ -275,7 +278,7 @@ app.post("/order", authMiddleware, async (req, res) => {
     const order = await orderRes.json();
     const orderId = order.id;
 
-    // 3. Add lines – MUST use itemId (GUID) for SaaS BC
+    // 3. Add lines – use itemId (GUID)
     const lineUrl = `${COMPANY_URL}/salesOrderLines`;
 
     for (const line of lines) {
@@ -284,7 +287,7 @@ app.post("/order", authMiddleware, async (req, res) => {
       const lineBody = {
         documentId: orderId,
         lineType: "Item",
-        itemId: line.id,      // GUID from /items
+        itemId: line.id,
         quantity: line.quantity,
       };
 
