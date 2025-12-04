@@ -71,7 +71,6 @@
 <!--------------------------- LOGIN CARD -------------------------->
 <div class="card" id="loginCard">
   <h2>Login</h2>
-  <ul>
   <label>Email: <input id="emailInput" type="email"></label><br><br>
   <label>Password: <input id="passwordInput" type="password"></label><br><br>
 
@@ -95,7 +94,7 @@
     <span id="message"></span>
 
     <div style="margin-top:12px;">
-      <label>Search: <input id="searchInput" placeholder="Search item..."></label>
+      <label>Search: <input id="searchInput" placeholder="Search by name or barcode..."></label>
     </div>
 
     <div id="items">Loading items...</div>
@@ -164,6 +163,7 @@ const previewModal = document.getElementById("previewModal");
 const previewTableBody = document.getElementById("previewTableBody");
 const previewTotal = document.getElementById("previewTotal");
 const message = document.getElementById("message");
+const searchInput = document.getElementById("searchInput");
 
 /* ----------------------------------------------------------
    LOGIN FUNCTION
@@ -201,32 +201,43 @@ async function loadItems() {
   const res = await fetch(`${BACKEND_URL}/items`);
   const data = await res.json();
   allItems = data;
-  renderItems();
+  renderItems(); // show all by default
 }
 
 /* ----------------------------------------------------------
-   RENDER ITEMS LIST
+   RENDER ITEMS LIST (supports filtered list)
 ------------------------------------------------------------*/
-function renderItems() {
+function renderItems(itemsToRender = allItems) {
   itemsDiv.innerHTML = "";
 
-  allItems.forEach(item => {
+  if (!itemsToRender.length) {
+    itemsDiv.textContent = "No items found.";
+    return;
+  }
+
+  itemsToRender.forEach(item => {
     const row = document.createElement("div");
     row.className = "item-row";
 
     row.innerHTML = `
       <div class="item-name">
         <strong>${item.no}</strong> - ${item.name}<br>
-        <span class="item-meta">Price: ${item.price} | Stock: ${item.inventory}</span>
+        <span class="item-meta">
+          Price: ${item.price} | Stock: ${item.inventory}
+          ${item.barcode ? " | Barcode: " + item.barcode : ""}
+        </span>
       </div>
       <input type="number" min="1" value="1" class="item-qty" id="qty-${item.id}">
       <button>Add</button>
     `;
 
     row.querySelector("button").onclick = () => {
-      const qty = parseInt(document.getElementById(`qty-${item.id}`).value);
+      const qty = parseInt(document.getElementById(`qty-${item.id}`).value, 10);
 
-      if (qty <= 0) return alert("Invalid quantity");
+      if (isNaN(qty) || qty <= 0) {
+        alert("Invalid quantity");
+        return;
+      }
 
       const existing = cart.find(c => c.id === item.id);
       if (existing) existing.quantity += qty;
@@ -238,6 +249,32 @@ function renderItems() {
     itemsDiv.appendChild(row);
   });
 }
+
+/* ----------------------------------------------------------
+   SEARCH BY NAME / NO / BARCODE
+------------------------------------------------------------*/
+searchInput.addEventListener("input", () => {
+  const q = searchInput.value.trim().toLowerCase();
+
+  if (!q) {
+    renderItems(allItems);
+    return;
+  }
+
+  const filtered = allItems.filter(item => {
+    const name = (item.name || "").toLowerCase();
+    const no = (item.no || "").toLowerCase();
+    const barcode = (item.barcode || "").toLowerCase(); // if backend sends barcode
+
+    return (
+      name.includes(q) ||
+      no.includes(q) ||
+      barcode.includes(q)
+    );
+  });
+
+  renderItems(filtered);
+});
 
 /* ----------------------------------------------------------
    CART RENDERING
@@ -296,8 +333,8 @@ function openPreview() {
 
     // Change qty
     row.querySelector(`#pv-qty-${index}`).oninput = (e) => {
-      let q = parseInt(e.target.value);
-      if (q <= 0) q = 1;
+      let q = parseInt(e.target.value, 10);
+      if (isNaN(q) || q <= 0) q = 1;
       cart[index].quantity = q;
 
       row.querySelector(`#pv-total-${index}`).textContent = (q * item.price).toFixed(2);
@@ -348,7 +385,6 @@ document.getElementById("confirmOrderBtn").addEventListener("click", async () =>
   renderCart();
   previewModal.style.display = "none";
 });
-
 </script>
 
 </body>
